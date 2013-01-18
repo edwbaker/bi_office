@@ -2,58 +2,56 @@
 #include <SPI.h>
 #endif
 #include <Ethernet.h>
-//#include <EthernetDNS.h>  Only needed in Arduino 0022 or earlier
+#include <string.h>
+//#include <EthernetDNS.h> string.h arduino
+//Only needed in Arduino 0022 or earlier
 #include <Twitter.h>
-boolean attempt_dhcp = false;
 
-String message;
+//When debuggin waiting for DHCP to fail is slow
+boolean attempt_dhcp = true;
 
-
-
-byte mac[] = { 
-  0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02 };
+//Configure Ethernet connection
+byte mac[] = { 0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02 };
 IPAddress ip(192,168,1, 177);
 IPAddress gateway(192,168,1, 1);
 IPAddress subnet(255, 255, 0, 0);
 
 EthernetServer server(80);
 
-double tempC;
+//Configure Twitter
+Twitter twitter("1096018604-Oy6Lq1bJFp3C6557AbLrmHR9aM2Q3Yph9hvKGU8");
+//A message to pass to Twitter
+String message;
 
+//For the temperature sensor
+int tempPin=4;
+double tempC;
 double temp_min = 1000;
 double temp_max = 0;
-
 unsigned long temp_min_time = millis();
 unsigned long temp_max_time = millis();
 
+//For the lighting monitor
 double light;
-int tempPin=4;
 int lightPin=5;
 unsigned long twitter_sent_temp = millis();
-
-double light_trigger_on  = 300.0;
-double light_trigger_off = 200.0;
+double light_trigger_on  = 520.0;
+double light_trigger_off = 500.0;
 unsigned long light_triggered = millis();
 int light_trigger_buffer = 2000;
 boolean light_on;
+unsigned long twitter_sent_light = millis();
+
+//Temp variable for double to String conversion
+char temp[5];
 
 
-
-//Variables associated with average readings
-const int num_readings = 10;
-int light_readings[num_readings];
-int temp_readings[num_readings];
-int reading_index = 0;
-int light_reading_total;
-int temp_reading_total;
-
-Twitter twitter("1096018604-Oy6Lq1bJFp3C6557AbLrmHR9aM2Q3Yph9hvKGU8");
 
 void setup()
 {
   message.reserve(140);
   //Is the light on?
-  light = analogRead(lightPin);
+  light = (analogRead(lightPin) + analogRead(lightPin) + analogRead(lightPin) + analogRead(lightPin) + analogRead(lightPin)) / 5;
   if (light > light_trigger_on) {
     light_on = true;
   }
@@ -97,12 +95,16 @@ void setup()
 
   Serial.println("connecting ...");
 
-  twitter_send(message);
-  
-  tempC = analogRead(tempPin);
+  twitter_send();
+
+  tempC = (analogRead(tempPin)+analogRead(tempPin)+analogRead(tempPin)+analogRead(tempPin)+analogRead(tempPin))/5;
   tempC = (5.0 * tempC * 100.0)/1024.0;
-  
+
   send_twitter_temperature();
+  
+  light = analogRead(lightPin);
+  
+  send_lighting_value();
 
   Serial.println("Starting loop!");
 }
@@ -111,7 +113,7 @@ void loop()
 {
   //Get data
 
-  tempC = analogRead(tempPin);
+  tempC = (analogRead(tempPin)+analogRead(tempPin)+analogRead(tempPin)+analogRead(tempPin)+analogRead(tempPin))/5;
   tempC = (5.0 * tempC * 100.0)/1024.0;
 
   if (tempC < temp_min){
@@ -137,23 +139,31 @@ void loop()
   if (millis() > light_triggered + light_trigger_buffer) {
     check_the_lights();
   }
-
-  Serial.println(tempC);
+  if (millis() > twitter_sent_light + 1800000) {
+    send_lighting_value();
+  }
 
 }
 
 void send_twitter_temperature(){
-  char temp[5];
   dtostrf(tempC,4,1,temp);
   temp[4] = NULL;
-  String temp_msg;
-  temp_msg.reserve(140);
-  temp_msg = "The current temperature is ";
-  temp_msg.concat(temp);
-  temp_msg.concat("C");
+  message = "The current temperature is ";
+  message.concat(temp);
+  message.concat("C");
 
-  twitter_send(temp_msg);
+  twitter_send();
   twitter_sent_temp = millis();
+}
+
+void send_lighting_value(){
+  dtostrf(light,4,0,temp);
+  temp[4] = NULL;
+  message = "The ambient lighting measures ";
+  message.concat(temp);
+  message.concat(" on an arbritary scale.");
+  twitter_send();
+  twitter_sent_light = millis();
 }
 
 void server_check_connections(){
@@ -203,7 +213,9 @@ void server_check_connections(){
           else {
             client.print("off");
           }
-
+          client.print(" (");
+          client.print(light);
+          client.println(")<br />");
 
           client.println("</html>");
           break;
@@ -231,25 +243,22 @@ void check_the_lights() {
     if (light < light_trigger_off ) {
       light_on = false;
       Serial.println("The lights are now off.");
-       message = "The lights are now off.";
-      twitter_send(message);
+      message = "The lights are now off.";
+      twitter_send();
     }
   }
   if (light_on == false) {
     if (light > light_trigger_on) {
       light_on = true;
       Serial.println("The lights are now on.");
-     message = "The lights are now on.";
-      twitter_send(message);
+      message = "The lights are now on.";
+      twitter_send();
     }
   }
   light_triggered = millis();
 }
 
-void twitter_send(String input) {
-  Serial.println("Incoming message:");
-  Serial.println(input);
-  message = input;
+void twitter_send() {
   message.concat(" (");
   message.concat(millis());
   message.concat(")\0");
@@ -273,7 +282,10 @@ void twitter_send(String input) {
   else {
     Serial.println("connection failed.");
   }
+  message = "";
   Serial.println();
+  delay(1000);
 }
+
 
 
