@@ -52,7 +52,11 @@ unsigned long twitter_sent_light = millis();
 //Temp variable for double to String conversion
 char temp[5];
 
-
+//Ed phone
+unsigned long phone_light_first_on = 0;
+unsigned long phone_light_last_on = 0;
+unsigned long phone_off_since = 0;
+boolean phone_has_message = false;
 
 void setup()
 {
@@ -152,6 +156,39 @@ void loop()
     send_lighting_value();
   }
 
+  Serial.println(analogRead(1));
+
+  if (analogRead(1) > 700) {
+    phone_light_last_on = millis();
+    if (!phone_has_message) {
+      if (phone_light_first_on == 0) {
+        phone_light_first_on = millis();
+        message = "Ed's phone is ringing";
+        twitter_send();
+        delay(1000);
+        message = "D edwbaker You're phone is ringing!";
+        twitter_send();
+      }
+      if (phone_light_first_on + 180000 < phone_light_last_on) {
+        phone_has_message = true;
+        message = "Ed's phone has an answerphone message.";
+        twitter_send();
+        message = "D edwbaker You have an answerphone message.";
+        twitter_send();
+      }
+    }
+  }
+
+  if (phone_has_message) {
+    if (phone_light_last_on + 15000 < millis()) {
+      phone_has_message = false;
+    } 
+  }
+
+
+
+
+
 }
 
 void send_twitter_temperature(){
@@ -204,7 +241,7 @@ void server_check_connections(){
           client.println();
           client.println(F("<!DOCTYPE HTML>"));
           client.println(F("<html>"));
-          
+
           //TODO: coffee/username
           if (page == "coffee_on") {
             Serial.println(F("Coffee on."));
@@ -246,6 +283,15 @@ void server_check_connections(){
             client.print(light);
             client.println(F(")<br />"));
 
+            client.print(F("<h2>State of telecommunications</h2>"));
+            if (phone_has_message) {
+              client.print(F("Ed's phone has an answerphone message."));
+            }
+            else {
+              client.print(F("Ed's phone has no messages."));
+            }
+            client.println(F("<br />"));
+
           }
           client.println(F("</html>"));
           break;
@@ -279,6 +325,9 @@ void check_the_lights() {
       Serial.println(F("The lights are now off."));
       message = "The lights are now off.";
       twitter_send();
+      message = "D edwbaker The lights are now off.";
+      twitter_send();
+
     }
   }
   if (light_on == false) {
@@ -286,6 +335,8 @@ void check_the_lights() {
       light_on = true;
       Serial.println(F("The lights are now on."));
       message = "The lights are now on.";
+      twitter_send();
+      message = "D edwbaker The lights are now on.";
       twitter_send();
     }
   }
@@ -329,6 +380,7 @@ void server_turn_on_coffee(){
   twitter_send();
 
 }
+
 
 
 
